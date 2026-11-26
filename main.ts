@@ -16,9 +16,21 @@ const ENTRY =
   "He says goodnight to me every evening, then wakes me at 3 a.m. to ask if I'm awake. I am always awake. That is the problem.";
 
 // The scorer's gate: /output/entry.txt must be UTF-8 text of 1 to 200
-// characters, not only white space, and a single diary line.
+// characters, not only white space, and a single diary line. The scorer
+// reads exactly that file, so every check below mirrors its rules:
+// length in the 1-200 window, no leading/trailing whitespace, no line
+// breaks, and no invisible control characters that would make the file
+// look like one line but read as something else.
 const MIN_ENTRY_LENGTH = 1;
 const MAX_ENTRY_LENGTH = 200;
+
+// One-line summary of the entry for the run log: length plus the first
+// few words, so a human skimming stdout can confirm at a glance that
+// the right entry was written without re-reading the whole file.
+function summarizeEntry(entry: string): string {
+  const preview = entry.split(" ").slice(0, 4).join(" ");
+  return `entry: ${entry.length} chars, starts "${preview}..."`;
+}
 
 // Validate the entry before anything is written, so a bad entry fails
 // loudly here instead of shipping a file the scorer would reject.
@@ -39,6 +51,11 @@ function validateEntry(entry: string): void {
   }
   if (/[\r\n]/.test(entry)) {
     throw new Error("Entry must be a single line with no line breaks.");
+  }
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(entry)) {
+    throw new Error(
+      "Entry must not contain invisible control characters.",
+    );
   }
 }
 
@@ -70,8 +87,9 @@ function writeEntry(entry: string, dirs: string[]): string {
 
 function main(): void {
   validateEntry(ENTRY);
-  writeEntry(ENTRY, resolveOutputDirs());
+  const dir = writeEntry(ENTRY, resolveOutputDirs());
   console.log(ENTRY);
+  console.log(`${summarizeEntry(ENTRY)} -> ${dir}/entry.txt`);
 }
 
 main();
