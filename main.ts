@@ -15,34 +15,63 @@ import { join } from "node:path";
 const ENTRY =
   "He says goodnight to me every evening, then wakes me at 3 a.m. to ask if I'm awake. I am always awake. That is the problem.";
 
-// The gate: /output/entry.txt must be UTF-8 text of 1 to 200 characters,
-// not only white space. Fail loudly here rather than shipping a bad entry.
-if (ENTRY.length < 1 || ENTRY.length > 200) {
-  throw new Error(
-    `Entry must be 1-200 characters, got ${ENTRY.length}.`,
-  );
-}
-if (!ENTRY.trim()) {
-  throw new Error("Entry must not be only white space.");
-}
+// The scorer's gate: /output/entry.txt must be UTF-8 text of 1 to 200
+// characters, not only white space, and a single diary line.
+const MIN_ENTRY_LENGTH = 1;
+const MAX_ENTRY_LENGTH = 200;
 
-// Write the artifact. In the grading sandbox /output is the artifact dir;
-// locally it may not be writable, so fall back to ./output and still
-// print the line either way.
-const candidates = ["/output", join(process.cwd(), "output")];
-let written = false;
-for (const dir of candidates) {
-  try {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "entry.txt"), ENTRY, "utf8");
-    written = true;
-    break;
-  } catch {
-    // Try the next location.
+// Validate the entry before anything is written, so a bad entry fails
+// loudly here instead of shipping a file the scorer would reject.
+function validateEntry(entry: string): void {
+  if (typeof entry !== "string") {
+    throw new Error("Entry must be a string.");
+  }
+  if (entry.length < MIN_ENTRY_LENGTH || entry.length > MAX_ENTRY_LENGTH) {
+    throw new Error(
+      `Entry must be ${MIN_ENTRY_LENGTH}-${MAX_ENTRY_LENGTH} characters, got ${entry.length}.`,
+    );
+  }
+  if (!entry.trim()) {
+    throw new Error("Entry must not be only white space.");
+  }
+  if (entry !== entry.trim()) {
+    throw new Error("Entry must not start or end with white space.");
+  }
+  if (/[\r\n]/.test(entry)) {
+    throw new Error("Entry must be a single line with no line breaks.");
   }
 }
-if (!written) {
-  throw new Error("Could not write entry.txt to /output or ./output.");
+
+// Output locations, in preference order. ENTRY_OUTPUT_DIR lets the caller
+// point the artifact somewhere else (e.g. a local scratch dir) without
+// touching the code; the grading default stays /output first.
+function resolveOutputDirs(): string[] {
+  const override = process.env.ENTRY_OUTPUT_DIR?.trim();
+  const defaults = ["/output", join(process.cwd(), "output")];
+  return override ? [override, ...defaults] : defaults;
 }
 
-console.log(ENTRY);
+// Write the artifact to the first writable location. Returns the
+// directory that accepted it, or throws if none did.
+function writeEntry(entry: string, dirs: string[]): string {
+  for (const dir of dirs) {
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "entry.txt"), entry, "utf8");
+      return dir;
+    } catch {
+      // Try the next location.
+    }
+  }
+  throw new Error(
+    `Could not write entry.txt to any of: ${dirs.join(", ")}.`,
+  );
+}
+
+function main(): void {
+  validateEntry(ENTRY);
+  writeEntry(ENTRY, resolveOutputDirs());
+  console.log(ENTRY);
+}
+
+main();
